@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as fn
+import pdb
 
 class SkipGram:
     # Network consists of an input layer, a single hidden layer and an output layer to which
@@ -35,6 +36,9 @@ class SkipGram:
         # Return the resultant vector.
         return y
 
+    # Function performs backpropagation of negative log loss between expected and actual
+    # values through the weights of the network. Returns the derivative of the loss
+    # function with respect the two weight matrices.
     def backprop(self, x, y_act):
         # Feed input word vector through network to generate a prediction, and store the
         # relevant intermediary vectors for use in backpropagation.
@@ -53,7 +57,32 @@ class SkipGram:
         # weight matrix.
         dw1 = x.ger(torch.matmul(self.weight_2, (y_pred - y_act)))
         
+        # Return the loss function derivatives with respect to the two weight matrices.
         return dw1, dw2
 
-    def train(self, training_data):
+    # Function trains model on provided training data, consisting of pairs of input and
+    # output word vectors. The output word vector should contain all the words within
+    # the context window of the input word. Training will be conducted for the specified
+    # number of epochs at the specified learning rate. There is also the option to
+    # provide validation data to allow training progress to be monitored.
+    def train(self, training_data, epochs, lr, validation_data=None):
         
+        for i in range(1, epochs):
+            
+            for x, y in training_data:
+
+                dw1, dw2 = self.backprop(x, y)
+
+                self.weight_1 = self.weight_1 - lr*dw1
+                self.weight_2 = self.weight_2 - lr*dw2
+
+
+            if validation_data:
+                test_results = [(self.feedforward(x), y) for (x, y) in validation_data]
+                num_correct = sum(int(torch.equal(y_pred, y_act))
+                        for (y_pred, y_act) in test_results)
+                print("Epoch {0}: {1} / {2}".format(i, num_correct, len(test_results)))
+
+
+sg = SkipGram(10, 5)
+pdb.set_trace()
