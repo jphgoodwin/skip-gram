@@ -57,6 +57,7 @@ class SkipGram:
         # weight matrix.
         dw1 = x.ger(torch.matmul(self.weight_2, (y_pred - y_act)))
         
+        # pdb.set_trace()
         # Return the loss function derivatives with respect to the two weight matrices.
         return dw1, dw2
 
@@ -67,22 +68,93 @@ class SkipGram:
     # provide validation data to allow training progress to be monitored.
     def train(self, training_data, epochs, lr, validation_data=None):
         
-        for i in range(1, epochs):
-            
+        for i in range(1, epochs+1):
+            count = 0
             for x, y in training_data:
-
+                
                 dw1, dw2 = self.backprop(x, y)
 
                 self.weight_1 = self.weight_1 - lr*dw1
                 self.weight_2 = self.weight_2 - lr*dw2
+                if (count == 9):
+                    print("X:")
+                    print(x)
+                    print("Y:")
+                    print(y)
+                    print("Y_pred")
+                    print(self.feedforward(x))
+                    # print("Weight matrix 1:")
+                    # print(self.weight_1)
+                    # print("Weight matrix 2:")
+                    # print(self.weight_2)
+                count += 1
+            pdb.set_trace()
 
 
             if validation_data:
                 test_results = [(self.feedforward(x), y) for (x, y) in validation_data]
-                num_correct = sum(int(torch.equal(y_pred, y_act))
-                        for (y_pred, y_act) in test_results)
+                num_correct = 0
+                for y_pred, y_act in test_results:
+                    # if (i == epochs):
+                    #     pdb.set_trace()
+                    # Round all values greater that or equal to 0.5 to 1 and the rest to 0.
+                    for j in range(0, y_pred.shape[0]):
+                        y_pred[j] = 1 if y_pred[j] >= 0.1 else 0
+
+                    # Compare predicted and actual results.
+                    if(torch.equal(y_pred, y_act)):
+                        num_correct += 1
+
                 print("Epoch {0}: {1} / {2}".format(i, num_correct, len(test_results)))
+            
+            # if (i == epochs):
+            #     pdb.set_trace()
 
 
-sg = SkipGram(10, 5)
-pdb.set_trace()
+# Set our vocabulary length and context window size.
+v_size = 10
+cw_size = 1
+
+# r_x = torch.randint(low=0, high=v_size, size=(10, 1))
+# r_y = torch.randint(low=0, high=v_size, size=(10, 2*cw_size))
+# 
+# x_vecs = []
+# y_vecs = []
+# for i in range(0, r_y.shape[0]):
+#     x_vec = torch.zeros(v_size)
+#     x_vec[r_x[i]] = 1
+#     x_vecs.append(x_vec)
+# 
+#     y_vec = torch.zeros(v_size)
+#     for j in range(0, r_y.shape[1]):
+#         y_vec[r_y[i][j]] = 1
+#     
+#     y_vecs.append(y_vec)
+
+x_vecs = []
+y_vecs = []
+for i in range(0, v_size):
+    x_vec = torch.zeros(v_size)
+    x_vec[i] = 1
+    x_vecs.append(x_vec)
+
+    y_vec = torch.zeros(v_size)
+    if (i == 0):
+        y_vec[v_size-1] = 1
+        y_vec[i+1] = 1
+    elif (i == v_size - 1):
+        y_vec[i-1] = 1
+        y_vec[0] = 1
+    else:
+        y_vec[i-1] = 1
+        y_vec[i+1] = 1
+    y_vecs.append(y_vec)
+
+# pdb.set_trace()
+data = list(zip(x_vecs, y_vecs))
+tr_data = data[0:8]
+va_data = data[8:]
+
+sg = SkipGram(v_size, 10)
+
+sg.train(data, 100, 0.01, data)
