@@ -67,15 +67,19 @@ class SkipGram:
     # number of epochs at the specified learning rate. There is also the option to
     # provide validation data to allow training progress to be monitored.
     def train(self, training_data, epochs, lr, validation_data=None):
-        
+        # Train for the specified number of epochs.
         for i in range(1, epochs+1):
+            # Iterate over the training data.
             count = 0
             for x, y in training_data:
-                
+                # Run backpropagation to generate loss derivative matrices.
                 dw1, dw2 = self.backprop(x, y)
 
+                # Adjust weights using loss derivatives restricted by learning rate.
                 self.weight_1 = self.weight_1 - lr*dw1
                 self.weight_2 = self.weight_2 - lr*dw2
+
+                # Print model progress.
                 if (count == 9):
                     print("X:")
                     print(x)
@@ -88,16 +92,17 @@ class SkipGram:
                     # print("Weight matrix 2:")
                     # print(self.weight_2)
                 count += 1
-            pdb.set_trace()
+            # pdb.set_trace()
 
 
+            # If there is validation data, use it to test the performance of the network.
             if validation_data:
                 test_results = [(self.feedforward(x), y) for (x, y) in validation_data]
                 num_correct = 0
                 for y_pred, y_act in test_results:
                     # if (i == epochs):
                     #     pdb.set_trace()
-                    # Round all values greater that or equal to 0.5 to 1 and the rest to 0.
+                    # Round all values greater than or equal to 0.1 to 1 and the rest to 0.
                     for j in range(0, y_pred.shape[0]):
                         y_pred[j] = 1 if y_pred[j] >= 0.1 else 0
 
@@ -115,29 +120,26 @@ class SkipGram:
 v_size = 10
 cw_size = 1
 
-# r_x = torch.randint(low=0, high=v_size, size=(10, 1))
-# r_y = torch.randint(low=0, high=v_size, size=(10, 2*cw_size))
-# 
-# x_vecs = []
-# y_vecs = []
-# for i in range(0, r_y.shape[0]):
-#     x_vec = torch.zeros(v_size)
-#     x_vec[r_x[i]] = 1
-#     x_vecs.append(x_vec)
-# 
-#     y_vec = torch.zeros(v_size)
-#     for j in range(0, r_y.shape[1]):
-#         y_vec[r_y[i][j]] = 1
-#     
-#     y_vecs.append(y_vec)
+# Create dataset containing 10 examples from a 10 word vocabulary. Each word is
+# represented by a one-hot-encoded vector of length 10 (the size of the vocabulary).
+# Within each example there are two vectors: one representing the input word, and
+# another containing the words within the context. The context has been set so it
+# contains the words either side of the input word in the vocabulary, wrapping
+# around to the start if the input word is the first or last word in the vocabulary.
+# e.g. x = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0], y = [0, 1, 0, 1, 0, 0, 0, 0, 0, 0].
 
+# Lists to hold word vectors for input and output examples.
 x_vecs = []
 y_vecs = []
+# Create an example using each word in the vocabulary.
 for i in range(0, v_size):
+    # Initialise input vector with zeros and then set ith index to 1.
     x_vec = torch.zeros(v_size)
     x_vec[i] = 1
+    # Append vector to input list.
     x_vecs.append(x_vec)
 
+    # Initialise output vector with zeros and then set the i-1th and i+1th to 1.
     y_vec = torch.zeros(v_size)
     if (i == 0):
         y_vec[v_size-1] = 1
@@ -148,13 +150,18 @@ for i in range(0, v_size):
     else:
         y_vec[i-1] = 1
         y_vec[i+1] = 1
+    # Append vector to output list.
     y_vecs.append(y_vec)
 
 # pdb.set_trace()
+# Zip lists together into a single dataset.
 data = list(zip(x_vecs, y_vecs))
-tr_data = data[0:8]
-va_data = data[8:]
 
+# tr_data = data[0:8]
+# va_data = data[8:]
+
+# Create model instance.
 sg = SkipGram(v_size, 10)
 
+# Train model with dataset.
 sg.train(data, 100, 0.01, data)
