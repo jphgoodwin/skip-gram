@@ -20,11 +20,15 @@ class SkipGram:
         self.weight_2 = torch.randn(d_size, v_size)
 
     # Function feeds input word vector (x) through model to produce a vector containing a
-    # prediction of the words within a context window of the input word.
-    def feedforward(self, x):
+    # prediction of the words within a context window of the input word. Rather than using
+    # a one-hot-encoded vector representation of the input word, the function is optimised
+    # to use the index of the word in the vocabulary instead.
+    def feedforward(self, x_indx):
         # Multiply the input vector by the transpose of the first weight matrix to get
-        # the hidden layer vector.
-        h = torch.matmul(self.weight_1.transpose(0, 1), x)
+        # the hidden layer vector. This is equivalent to selecting the row with index equal
+        # to x_indx, so we'll do this as it's far less computationally expensive.
+        # h = torch.matmul(self.weight_1.transpose(0, 1), x)
+        h = self.weight_1[x_indx]
 
         # Multiply the hidden layer by the transpose of the second weight matrix to get
         # the output vector.
@@ -39,10 +43,11 @@ class SkipGram:
     # Function performs backpropagation of negative log loss between expected and actual
     # values through the weights of the network. Returns the derivative of the loss
     # function with respect the two weight matrices.
-    def backprop(self, x, y_act):
+    def backprop(self, x_indx, y_act):
         # Feed input word vector through network to generate a prediction, and store the
         # relevant intermediary vectors for use in backpropagation.
-        h = torch.matmul(self.weight_1.transpose(0, 1), x)
+        # h = torch.matmul(self.weight_1.transpose(0, 1), x)
+        h = self.weight_1[x_indx]
         u = torch.matmul(self.weight_2.transpose(0, 1), h)
         y_pred = fn.softmax(u)
 
@@ -54,39 +59,42 @@ class SkipGram:
         # Derivative of negative log loss (L) with respect to the first weight matrix.
         # Equates to the outer product between the input vector (x) and the difference
         # between the predicted and actual output vectors, multiplied by the second
-        # weight matrix.
-        dw1 = x.ger(torch.matmul(self.weight_2, (y_pred - y_act)))
+        # weight matrix. The outer product with input vector will produce a matrix
+        # with zeros everywhere except the row with index corresponding to the word
+        # index in the vocabulary, so just return this row.
+        # dw1 = x.ger(torch.matmul(self.weight_2, (y_pred - y_act)))
+        dw1 = torch.matmul(self.weight_2, (y_pred - y_act))
         
         # pdb.set_trace()
         # Return the loss function derivatives with respect to the two weight matrices.
         return dw1, dw2
 
-    # Function trains model on provided training data, consisting of pairs of input and
-    # output word vectors. The output word vector should contain all the words within
-    # the context window of the input word. Training will be conducted for the specified
-    # number of epochs at the specified learning rate. There is also the option to
-    # provide validation data to allow training progress to be monitored.
+    # Function trains model on provided training data, consisting of pairs of input word
+    # indices, and output word vectors. The output word vector should contain all the 
+    # words within the context window of the input word. Training will be conducted for
+    # the specified number of epochs at the specified learning rate. There is also the
+    # option to provide validation data to allow training progress to be monitored.
     def train(self, training_data, epochs, lr, validation_data=None):
         # Train for the specified number of epochs.
         for i in range(1, epochs+1):
             # Iterate over the training data.
             count = 0
-            for x, y in training_data:
+            for x_indx, y in training_data:
                 # Run backpropagation to generate loss derivative matrices.
-                dw1, dw2 = self.backprop(x, y)
+                dw1, dw2 = self.backprop(x_indx, y)
 
                 # Adjust weights using loss derivatives restricted by learning rate.
-                self.weight_1 = self.weight_1 - lr*dw1
+                # In W1, only the row corresponding to input word "x_indx" needs adjusting.
+                self.weight_1[x_indx] = self.weight_1[x_indx] - lr*dw1
                 self.weight_2 = self.weight_2 - lr*dw2
 
                 # Print model progress.
                 if (count == 9):
-                    print("X:")
-                    print(x)
+                    print("X: {0}".format(x_indx))
                     print("Y:")
                     print(y)
                     print("Y_pred")
-                    print(self.feedforward(x))
+                    print(self.feedforward(x_indx))
                     # print("Weight matrix 1:")
                     # print(self.weight_1)
                     # print("Weight matrix 2:")
@@ -97,7 +105,7 @@ class SkipGram:
 
             # If there is validation data, use it to test the performance of the network.
             if validation_data:
-                test_results = [(self.feedforward(x), y) for (x, y) in validation_data]
+                test_results = [(self.feedforward(x_indx), y) for (x_indx, y) in validation_data]
                 num_correct = 0
                 for y_pred, y_act in test_results:
                     # if (i == epochs):
@@ -115,29 +123,67 @@ class SkipGram:
             # if (i == epochs):
             #     pdb.set_trace()
 
+    # Function tests model on provided dataset and prints comparison of predicted words against
+    # actual words in string format if vocabulary provided, otherwise as indices.
+    def test(self, test_data, vocab=None):
+        test_results = [(x_indx, self.feedforward(x_indx), y) for (x_indx, y) in test_data]
+        num_correct = 0
+        for x_indx, y_pred, y_act in test_results:
+            # Round all values greater than or equal to 0.1 to 1 and the rest to 0.
+            for j in range(0, y_pred.shape[0]):
+                y_pred[j] = 1 if y_pred[j] >= 0.1 else 0
+            
+            # Extract word indices from word vectors and lookup in vocabulary if available.
+            # Extract indices.
+            p_indxs = torch.nonzero(y_pred)
+            a_indxs = torch.nonzero(y_act)
+
+            if vocab:
+                # Map to word strings.
+                x_word = vocab[x_indx]
+                p_words = [vocab[w] for w in p_indxs]
+                a_words = [vocab[w] for w in a_indxs]
+
+                print("x: {0}".format(x_word))
+                print("y_pred:")
+                print(p_words)
+                print("y_act:")
+                print(a_words)
+            else:
+                print("x: {0}".format(x_indx))
+                print("y_pred:")
+                print(p_indxs)
+                print("y_act:")
+                print(a_indxs)
+                    
+            # Compare predicted and actual results.
+            if (torch.equal(y_pred, y_act)):
+                num_correct += 1
+
+        print("Test results: {0} / {1}".format(num_correct, len(test_results)))
+
 
 # Set our vocabulary length and context window size.
-v_size = 10
+vocabulary = ["my", "very", "easy", "method", "just", "speeds", "up", "naming", "planets", "."]
+v_size = len(vocabulary)
 cw_size = 1
 
 # Create dataset containing 10 examples from a 10 word vocabulary. Each word is
 # represented by a one-hot-encoded vector of length 10 (the size of the vocabulary).
-# Within each example there are two vectors: one representing the input word, and
-# another containing the words within the context. The context has been set so it
-# contains the words either side of the input word in the vocabulary, wrapping
-# around to the start if the input word is the first or last word in the vocabulary.
-# e.g. x = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0], y = [0, 1, 0, 1, 0, 0, 0, 0, 0, 0].
+# Within each example there is: and number representing the index of the input word in
+# the vocabulary, and a one-hot-encoded vector containing the words within the context.
+# The context has been set so it contains the words either side of the input word in
+# the vocabulary, wrapping around to the start if the input word is the first or last
+# word in the vocabulary.
+# e.g. x = 2, y = [0, 1, 0, 1, 0, 0, 0, 0, 0, 0].
 
 # Lists to hold word vectors for input and output examples.
-x_vecs = []
+x_indxs = []
 y_vecs = []
 # Create an example using each word in the vocabulary.
 for i in range(0, v_size):
-    # Initialise input vector with zeros and then set ith index to 1.
-    x_vec = torch.zeros(v_size)
-    x_vec[i] = 1
-    # Append vector to input list.
-    x_vecs.append(x_vec)
+    # Append index to input list.
+    x_indxs.append(i)
 
     # Initialise output vector with zeros and then set the i-1th and i+1th to 1.
     y_vec = torch.zeros(v_size)
@@ -155,7 +201,7 @@ for i in range(0, v_size):
 
 # pdb.set_trace()
 # Zip lists together into a single dataset.
-data = list(zip(x_vecs, y_vecs))
+data = list(zip(x_indxs, y_vecs))
 
 # tr_data = data[0:8]
 # va_data = data[8:]
@@ -165,3 +211,6 @@ sg = SkipGram(v_size, 10)
 
 # Train model with dataset.
 sg.train(data, 100, 0.01, data)
+
+# Test model.
+sg.test(data, vocab=vocabulary)
