@@ -4,6 +4,19 @@ import re
 
 class IMDBDataLoader():
     def __init__(self, vocab_path, train_path, test_path, ntrain, ntest):
+        # Declare instance variables.
+        self.ntrain = None         # Number of training examples to load.
+        self.ntest = None          # Number of test examples to load.
+        self.vocabPath = None      # Path to vocab file.
+        self.vocab = None          # Loaded vocabulary.
+        self.trainPath = None      # Path to train/ directory.
+        self.ptrainex = None       # Loaded positive training examples.
+        self.ntrainex = None       # Loaded negative training examples.
+        self.utrainex = None       # Loaded unsupervised training examples.
+        self.testPath = None       # Path to test/ directory.
+        self.ptestex = None        # Loaded positive test examples.
+        self.ntestex = None        # Loaded negative test examples.
+
         # Set number of training and test examples to load.
         self.ntrain = ntrain
         self.ntest = ntest
@@ -24,8 +37,8 @@ class IMDBDataLoader():
         # Open file for reading.
         f = open(path, "r")
 
-        # Initialise vocabulary with unknown symbol in first index.
-        self.vocab = ["unk"]
+        # Initialise vocabulary with unknown and padding symbols.
+        self.vocab = ["unk", "##"]
 
         # Add numbers to vocabulary.
         for n in range(0, 10):
@@ -153,23 +166,28 @@ class IMDBDataLoader():
             # Append tuple of example number, rating, and word list to example list.
             utel.append((num, rating, wilist))
 
+        # Store loaded examples.
+        self.ptrainex = ptel
+        self.ntrainex = ntel
+        self.utrainex = utel
+
         # Print index and string values for positive example list.
-        print("Positive example list:")
-        for pte in ptel:
-            wlist = [(i, self.vocab[i]) for i in pte[2]]
-            print(wlist)
+        # print("Positive example list:")
+        # for pte in ptel:
+        #     wlist = [(i, self.vocab[i]) for i in pte[2]]
+        #     print(wlist)
 
         # Print index and string values for negative example list.
-        print("Negative example list:")
-        for nte in ntel:
-            wlist = [(i, self.vocab[i]) for i in nte[2]]
-            print(wlist)
+        # print("Negative example list:")
+        # for nte in ntel:
+        #     wlist = [(i, self.vocab[i]) for i in nte[2]]
+        #     print(wlist)
 
         # Print index and string values for unsupervised example list.
-        print("Unsupervised example list:")
-        for ute in utel:
-            wlist = [(i, self.vocab[i]) for i in ute[2]]
-            print(wlist)
+        # print("Unsupervised example list:")
+        # for ute in utel:
+        #     wlist = [(i, self.vocab[i]) for i in ute[2]]
+        #     print(wlist)
 
 
     def loadTestData(self, path):
@@ -251,17 +269,21 @@ class IMDBDataLoader():
             # Append tuple of example number, rating, and word list to example list.
             ntel.append((num, rating, wilist))
 
+        # Store loaded examples.
+        self.ptestex = ptel
+        self.ntestex = ntel
+
         # Print index and string values for positive example list.
-        print("Positive example list:")
-        for pte in ptel:
-            wlist = [(i, self.vocab[i]) for i in pte[2]]
-            print(wlist)
+        # print("Positive example list:")
+        # for pte in ptel:
+        #     wlist = [(i, self.vocab[i]) for i in pte[2]]
+        #     print(wlist)
 
         # Print index and string values for negative example list.
-        print("Negative example list:")
-        for nte in ntel:
-            wlist = [(i, self.vocab[i]) for i in nte[2]]
-            print(wlist)
+        # print("Negative example list:")
+        # for nte in ntel:
+        #     wlist = [(i, self.vocab[i]) for i in nte[2]]
+        #     print(wlist)
 
 
     # Function splits the input word on any punctuation and returns a subword list.
@@ -298,5 +320,4 @@ class IMDBDataLoader():
         # Otherwise return word in a list.
         return [word]
 
-dl = IMDBDataLoader("./data/aclImdb/imdb.vocab", "./data/aclImdb/train/", "./data/aclImdb/test/",
-        1, 1)
+# dl = IMDBDataLoader("./data/aclImdb/imdb.vocab", "./data/aclImdb/train/", "./data/aclImdb/test/", 1, 1)

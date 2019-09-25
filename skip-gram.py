@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as fn
 import pdb
+import data_loader
 
 class SkipGram:
     # Network consists of an input layer, a single hidden layer and an output layer to which
@@ -74,14 +75,41 @@ class SkipGram:
     # words within the context window of the input word. Training will be conducted for
     # the specified number of epochs at the specified learning rate. There is also the
     # option to provide validation data to allow training progress to be monitored.
-    def train(self, training_data, epochs, lr, validation_data=None):
+    def train(self, training_data, epochs, lr, context=1, padding=True, validation_data=None):
+        print(len(training_data))
+        # Add padding equal to size of context window if required.
+        if padding:
+            for p in range(0, context):
+                # Add padding to beginning. Padding is represented by "##" in index 1 of vocabulary.
+                training_data.insert(0, 1)
+                # Add padding to end.
+                training_data.append(1)
+
+                if validation_data:
+                    validation_data.insert(0, 1)
+                    validation_data.append(1)
+
         # Train for the specified number of epochs.
         for i in range(1, epochs+1):
-            # Iterate over the training data.
             count = 0
-            for x_indx, y in training_data:
+            # Iterate over the training data.
+            for wn in range(context, len(training_data) - context):
+                x_indx = training_data[wn]
+
+                y_indxs = []
+                # Add words within the context window either side of wn.
+                for cw in range(1, context + 1):
+                    y_indxs.append(training_data[wn-cw])
+                    y_indxs.append(training_data[wn+cw])
+
+                y_vec = torch.zeros(self.vocab_size)
+                for y_indx in y_indxs:
+                    y_vec[y_indx] = 1
+
+                # pdb.set_trace()
+
                 # Run backpropagation to generate loss derivative matrices.
-                dw1, dw2 = self.backprop(x_indx, y)
+                dw1, dw2 = self.backprop(x_indx, y_vec)
 
                 # Adjust weights using loss derivatives restricted by learning rate.
                 # In W1, only the row corresponding to input word "x_indx" needs adjusting.
@@ -89,10 +117,10 @@ class SkipGram:
                 self.weight_2 = self.weight_2 - lr*dw2
 
                 # Print model progress.
-                if (count == 9):
+                if (count == 9 and False):
                     print("X: {0}".format(x_indx))
                     print("Y:")
-                    print(y)
+                    print(y_vec)
                     print("Y_pred")
                     print(self.feedforward(x_indx))
                     # print("Weight matrix 1:")
@@ -105,33 +133,73 @@ class SkipGram:
 
             # If there is validation data, use it to test the performance of the network.
             if validation_data:
-                test_results = [(self.feedforward(x_indx), y) for (x_indx, y) in validation_data]
+                test_results = []
+                for wn in range(context, len(validation_data) - context):
+                    x_indx = validation_data[wn]
+
+                    y_indxs = []
+                    # Add words within the context window either side of wn.
+                    for cw in range(1, context + 1):
+                        y_indxs.append(validation_data[wn-cw])
+                        y_indxs.append(validation_data[wn+cw])
+
+                    y_vec = torch.zeros(self.vocab_size)
+                    for y_indx in y_indxs:
+                        y_vec[y_indx] = 1
+
+                    test_results.append((self.feedforward(x_indx), y_vec))
+
                 num_correct = 0
                 for y_pred, y_act in test_results:
                     # if (i == epochs):
                     #     pdb.set_trace()
                     # Round all values greater than or equal to 0.1 to 1 and the rest to 0.
-                    for j in range(0, y_pred.shape[0]):
-                        y_pred[j] = 1 if y_pred[j] >= 0.1 else 0
+                    y_pred.gt_(0.1).type(torch.FloatTensor)
+                    # for j in range(0, y_pred.shape[0]):
+                    #     y_pred[j] = 1 if y_pred[j] >= 0.1 else 0
 
                     # Compare predicted and actual results.
                     if(torch.equal(y_pred, y_act)):
                         num_correct += 1
 
                 print("Epoch {0}: {1} / {2}".format(i, num_correct, len(test_results)))
-            
+
             # if (i == epochs):
             #     pdb.set_trace()
 
     # Function tests model on provided dataset and prints comparison of predicted words against
     # actual words in string format if vocabulary provided, otherwise as indices.
-    def test(self, test_data, vocab=None):
-        test_results = [(x_indx, self.feedforward(x_indx), y) for (x_indx, y) in test_data]
+    def test(self, test_data, context=1, padding=True, vocab=None):
+        # Add padding equal to size of context window if required.
+        if padding:
+            for p in range(0, context):
+                # Add padding to beginning. Padding is represented by "##" in index 1 of vocabulary.
+                test_data.insert(0, 1)
+                # Add padding to end.
+                test_data.append(1)
+
+        test_results = []
+        for wn in range(context, len(test_data) - context):
+            x_indx = test_data[wn]
+
+            y_indxs = []
+            # Add words within the context window either side of wn.
+            for cw in range(1, context + 1):
+                y_indxs.append(test_data[wn-cw])
+                y_indxs.append(test_data[wn+cw])
+
+            y_vec = torch.zeros(self.vocab_size)
+            for y_indx in y_indxs:
+                y_vec[y_indx] = 1
+
+            test_results.append((x_indx, self.feedforward(x_indx), y_vec))
+
         num_correct = 0
         for x_indx, y_pred, y_act in test_results:
             # Round all values greater than or equal to 0.1 to 1 and the rest to 0.
-            for j in range(0, y_pred.shape[0]):
-                y_pred[j] = 1 if y_pred[j] >= 0.1 else 0
+            y_pred.gt_(0.1).type(torch.FloatTensor)
+            # for j in range(0, y_pred.shape[0]):
+            #     y_pred[j] = 1 if y_pred[j] >= 0.1 else 0
             
             # Extract word indices from word vectors and lookup in vocabulary if available.
             # Extract indices.
@@ -206,11 +274,17 @@ data = list(zip(x_indxs, y_vecs))
 # tr_data = data[0:8]
 # va_data = data[8:]
 
+dl = data_loader.IMDBDataLoader("./data/aclImdb/imdb.vocab", "./data/aclImdb/train/", "./data/aclImdb/test/", 1, 1)
+
+tr_data = dl.ptrainex[0][2]
+va_data = tr_data[:]
+te_data = tr_data[:]
+
 # Create model instance.
-sg = SkipGram(v_size, 10)
+sg = SkipGram(len(dl.vocab), 10)
 
 # Train model with dataset.
-sg.train(data, 100, 0.01, data)
+sg.train(training_data=tr_data, epochs=300, lr=0.005, context=2, validation_data=va_data)
 
 # Test model.
-sg.test(data, vocab=vocabulary)
+sg.test(te_data, context=2, vocab=dl.vocab)
