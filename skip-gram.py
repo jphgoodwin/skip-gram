@@ -72,9 +72,8 @@ class SkipGram:
 
     # Function trains model on provided training data, consisting of a list of word indexes
     # into a vocabulary, over which it passes a context window to generate individual examples.
-    # Within each example there is a central word which serves as input, and the words either
-    # side within the context window are put together into a single one-hot-encoded vector
-    # representing the target output. Training will be conducted for the given number of
+    # Within each example there is tuple consisting of an input word along with one of the words
+    # within its context window as an output word. Training will be conducted for the given number of
     # epochs, at the specified learning rate. The batch size determines how many examples will
     # be extracted and run in parallel. The caller may specify a context window size (default 1)
     # and whether to pad the input list (default True). There is also the option to provide
@@ -93,38 +92,45 @@ class SkipGram:
                     validation_data.insert(0, 1)
                     validation_data.append(1)
 
+        # Break example range down into batches, accounting for the required context window
+        # before the first and after the last examples. If no padding has been added, this will
+        # mean a context window worth of examples at each end will be excluded.
+
+        # Create example tuples for each word paired with the words in its context window, and
+        # concatenate into a single examples list. The required context window is accounted for
+        # in the range, so if no padding has been added some words at the beginning and end
+        # will be excluded from training.
+        examples = []
+        for wn in range(context, len(training_data) - context):
+            for cw in range(1, context+1):
+                examples.append((training_data[wn], training_data[wn-cw]))
+                examples.append((training_data[wn], training_data[wn+cw]))
+
+        # Break the examples down into batches of size bs.
+        batches = [examples[en:en+bs] for en in range(0, len(examples), bs)]
+
         # Train for the specified number of epochs.
         for i in range(1, epochs+1):
-            # Break example range down into batches, accounting for the required context window
-            # before the first and after the last examples. If no padding has been added, this will
-            # mean a context window worth of examples at each end will be excluded.
-            batches = [range(wn, min(wn+bs, len(training_data) - context))
-                    for wn in range(context, len(training_data) - context, bs)]
 
-            # Iterate over the batch ranges.
-            for bn in batches:
-                # Extract training examples from within batch range to use as input, and store in a vector.
-                x_indxs = torch.tensor([training_data[wn] for wn in bn])
-
-                # Create an array of one-hot-encoded vectors representing the context window for each
-                # example in the batch.
+            # Iterate over the batches.
+            for batch in batches:
+                # Create lists of input word indexes and output one-hot-encoded word vectors
+                # from examples in batch.
+                x_indxs = []
                 y_vecs = []
-                for wn in bn:
-                    # Extract the context word indices either side of the current word.
-                    y_indxs = []
-                    for cw in range(1, context+1):
-                        y_indxs.append(training_data[wn-cw])
-                        y_indxs.append(training_data[wn+cw])
-
-                    # Convert these word indices into a one-hot-encoded vector.
+                for x, y in batch:
+                    # Add input index to list.
+                    x_indxs.append(x)
+                    # Create output one-hot-encoded vector.
                     y_vec = torch.zeros(self.vocab_size)
-                    for y_indx in y_indxs:
-                        y_vec[y_indx] = 1
-
-                    # Append vector to list.
+                    y_vec[y] = 1
+                    # Add output vector to list.
                     y_vecs.append(y_vec)
 
-                # Stack context vectors in a 2D tensor.
+                # Convert index list to tensor.
+                x_indxs = torch.tensor(x_indxs)
+
+                # Stack output vectors in a tensor.
                 y_vecs = torch.stack(y_vecs)
 
                 # Run backpropagation to generate loss derivative matrices.
@@ -137,35 +143,40 @@ class SkipGram:
 
             # If there is validation data, use it to test the performance of the network.
             if validation_data:
+                # Create example tuples for each word paired with the words in its context window, and
+                # concatenate into a single examples list.
+                examples = []
+                for wn in range(context, len(validation_data) - context):
+                    for cw in range(1, context+1):
+                        examples.append((validation_data[wn], validation_data[wn-cw]))
+                        examples.append((validation_data[wn], validation_data[wn+cw]))
+
                 test_results = []
                 # Iterate over validation data.
-                for wn in range(context, len(validation_data) - context):
-                    # Extract the input word from current position wn.
-                    x_indx = validation_data[wn]
+                for x, y in examples:
+                    # Set x_index to input word index.
+                    x_indx = x
 
-                    # Form output word list from words either side of current position wn.
-                    y_indxs = []
-                    for cw in range(1, context + 1):
-                        y_indxs.append(validation_data[wn-cw])
-                        y_indxs.append(validation_data[wn+cw])
-
-                    # Covert the output word list into a one-hot-encoded vector.
+                    # Create output one-hot-encoded word vector from output word index.
                     y_vec = torch.zeros(self.vocab_size)
-                    for y_indx in y_indxs:
-                        y_vec[y_indx] = 1
+                    y_vec[y] = 1
 
                     # Add tuple of predicted and actual output vectors to test_results.
                     test_results.append((self.feedforward(x_indx), y_vec))
 
                 num_correct = 0
                 # Iterate over test_results and compare predicted to actual output, counting the
-                # number that match.
+                # number of predicted vectors that contain the actual vector for each example.
                 for y_pred, y_act in test_results:
                     # Round all values greater than or equal to 0.1 to 1 and the rest to 0.
                     y_pred.gt_(0.1).type(torch.FloatTensor)
 
-                    # Compare predicted and actual results.
-                    if(torch.equal(y_pred, y_act)):
+                    # Extract indices.
+                    p_indxs = torch.nonzero(y_pred)
+                    a_indx = torch.nonzero(y_act)
+
+                    # Determine whether y_act is included in y_pred and increment num_correct if so.
+                    if ((p_indxs == a_indx).nonzero().nelement() > 0):
                         num_correct += 1
 
                 # Print results.
@@ -183,22 +194,24 @@ class SkipGram:
                 # Add padding to end.
                 test_data.append(1)
 
+
+        # Create example tuples for each word paired with the words in its context window, and
+        # concatenate into a single examples list.
+        examples = []
+        for wn in range(context, len(test_data) - context):
+            for cw in range(1, context+1):
+                examples.append((test_data[wn], test_data[wn-cw]))
+                examples.append((test_data[wn], test_data[wn+cw]))
+
         test_results = []
         # Iterate over test data.
-        for wn in range(context, len(test_data) - context):
-            # Extract the input word from current position wn.
-            x_indx = test_data[wn]
+        for x, y in examples:
+            # Set x_index to input word index.
+            x_indx = x
 
-            # Form output word list from words either side of current position wn.
-            y_indxs = []
-            for cw in range(1, context + 1):
-                y_indxs.append(test_data[wn-cw])
-                y_indxs.append(test_data[wn+cw])
-
-            # Covert the output word list into a one-hot-encoded vector.
+            # Create output one-hot-encoded word vector from output word index.
             y_vec = torch.zeros(self.vocab_size)
-            for y_indx in y_indxs:
-                y_vec[y_indx] = 1
+            y_vec[y] = 1
 
             # Add tuple of predicted and actual output vectors to test_results.
             test_results.append((x_indx, self.feedforward(x_indx), y_vec))
@@ -213,13 +226,13 @@ class SkipGram:
             # Extract word indices from word vectors and lookup in vocabulary if available.
             # Extract indices.
             p_indxs = torch.nonzero(y_pred)
-            a_indxs = torch.nonzero(y_act)
+            a_indx = torch.nonzero(y_act)
 
             if vocab:
                 # Map to word strings.
                 x_word = vocab[x_indx]
                 p_words = [vocab[w] for w in p_indxs]
-                a_words = [vocab[w] for w in a_indxs]
+                a_words = [vocab[w] for w in a_indx]
 
                 # Print words.
                 print("x: {0}, y_pred: {1}, y_act: {2}".format(x_word, p_words, a_words))
@@ -233,10 +246,11 @@ class SkipGram:
                 print("y_pred:")
                 print(p_indxs)
                 print("y_act:")
-                print(a_indxs)
-                    
-            # Compare predicted and actual results.
-            if (torch.equal(y_pred, y_act)):
+                print(a_indx)
+
+            # Determine whether y_act is included in y_pred and increment num_correct if so.
+            if ((p_indxs == a_indx).nonzero().nelement() > 0):
+                print("correct")
                 num_correct += 1
 
         # Print results.
@@ -267,25 +281,27 @@ class SkipGram:
 
 
 # Load data from IMDB dataset.
-dl = data_loader.IMDBDataLoader("./data/aclImdb/imdb.vocab", "./data/aclImdb/train/", "./data/aclImdb/test/", 1, 1)
+dl = data_loader.IMDBDataLoader("./data/aclImdb/imdb.vocab", "./data/aclImdb/train/", "./data/aclImdb/test/", 10, 3)
 
 # Extract training data as list of words, concatenating examples together.
 tr_data = []
 for ex in dl.ptrainex:
     tr_data.extend(ex[2])
 va_data = tr_data[:]
-te_data = tr_data[:]
+te_data = []
+for ex in dl.ptestex:
+    te_data.extend(ex[2])
 
 # Create model instance.
 sg = SkipGram(len(dl.vocab), 10)
 
-sg.loadModel("model_2")
+sg.loadModel("model_3")
 
 # Train model with dataset.
-# sg.train(training_data=tr_data, epochs=100, bs=16, lr=0.005, context=1, validation_data=va_data)
+sg.train(training_data=tr_data, epochs=100, bs=16, lr=0.005, context=1, validation_data=va_data)
 
 # Save model.
-# sg.saveModel("model_2")
+sg.saveModel("model_5")
 
 # Test model.
 sg.test(te_data, context=1, vocab=dl.vocab)
